@@ -6,7 +6,7 @@
     <title>AgriCactus Sistema Maestro</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        :root { --p: #1b5e20; --s: #f4f7f6; --danger: #c62828; --info: #0277bd; }
+        :root { --p: #1b5e20; --s: #f4f7f6; --danger: #c62828; --info: #0277bd; --accent: #ff9800; }
         body { font-family: sans-serif; background: var(--s); margin: 0; padding: 10px; padding-bottom: 80px; }
         .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 15px; }
         label { display: block; font-weight: bold; font-size: 11px; color: #555; margin-top: 10px; }
@@ -17,12 +17,15 @@
         .btn-config { background: #607d8b; }
         .btn-view { background: var(--info); }
         
+        /* Nueva sección Entrada Manual */
+        .manual-entry { display: flex; gap: 5px; margin-bottom: 10px; }
+        .manual-entry input { margin-top: 0; border: 2px solid var(--accent); }
+        .btn-manual { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 15px; font-weight: bold; cursor: pointer; }
+
         .btn-export { width: 100%; background: var(--p); color: white; padding: 20px; border: none; border-radius: 10px; font-weight: bold; font-size: 16px; cursor: pointer; position: fixed; bottom: 10px; left: 0; width: calc(100% - 20px); margin: 0 10px; z-index: 100; }
         .btn-danger { background: var(--danger); color: white; border: none; padding: 10px; border-radius: 5px; width: 100%; cursor: pointer; }
         
         #status { text-align: center; font-weight: bold; padding: 10px; color: var(--p); min-height: 20px; }
-        
-        /* Estilos Tabla Registros */
         .reg-item { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 10px 0; font-size: 13px; }
         .reg-info { flex-grow: 1; }
         .btn-del-mini { background: #ffcdd2; color: #c62828; border: none; padding: 5px 10px; border-radius: 4px; font-weight: bold; }
@@ -33,8 +36,8 @@
 <body>
 
 <div class="nav-buttons">
-    <button class="btn-nav btn-config" onclick="document.getElementById('config').style.display='block'">⚙️ CONFIGURACIÓN</button>
-    <button class="btn-nav btn-view" onclick="abrirRegistros()">📋 VER REGISTROS (<span id="count">0</span>)</button>
+    <button class="btn-nav btn-config" onclick="document.getElementById('config').style.display='block'">⚙️ CONFIG</button>
+    <button class="btn-nav btn-view" onclick="abrirRegistros()">📋 VER (<span id="count">0</span>)</button>
 </div>
 
 <div id="config" class="modal">
@@ -42,16 +45,15 @@
     <label>PEGAR DATOS (CSV: ID, NOMBRE, VARIEDAD)</label>
     <textarea id="importInput" style="width:100%; height:150px; border: 1px solid #999;"></textarea>
     <button onclick="procesarCarga()" style="width:100%; padding:15px; background:black; color:white; margin-top:10px; border:none; border-radius:8px;">📥 GUARDAR DATOS</button>
-    <hr style="margin: 20px 0;">
-    <p style="color: var(--danger); font-size: 12px; font-weight: bold;">ZONA DE PELIGRO:</p>
-    <button class="btn-danger" onclick="resetTotal()">⚠️ RESET TOTAL (BORRAR TODO)</button>
+    <hr>
+    <button class="btn-danger" onclick="resetTotal()">⚠️ RESET TOTAL</button>
     <button onclick="document.getElementById('config').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px;">❌ CERRAR</button>
 </div>
 
 <div id="modalRegs" class="modal">
-    <h3>Registros Escaneados</h3>
+    <h3>Registros (Últimos 100 mostrados)</h3>
     <div id="listaRegistros"></div>
-    <button onclick="document.getElementById('modalRegs').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px;">❌ VOLVER AL ESCÁNER</button>
+    <button onclick="document.getElementById('modalRegs').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px;">❌ VOLVER</button>
 </div>
 
 <div class="card">
@@ -78,17 +80,23 @@
 </div>
 
 <div class="card">
+    <label>ENTRADA MANUAL O LECTOR EXTERNO</label>
+    <div class="manual-entry">
+        <input type="text" id="manualCode" placeholder="Escribe código o usa lector USB..." onkeypress="if(event.key==='Enter') registrarManual()">
+        <button class="btn-manual" onclick="registrarManual()">AÑADIR</button>
+    </div>
+    <hr>
     <div id="reader"></div>
     <div id="status">LISTO PARA ESCANEAR</div>
 </div>
 
-<button class="btn-export" onclick="exportar()">DESCARGAR CSV</button>
+<button class="btn-export" onclick="exportar()">DESCARGAR EXCEL/CSV</button>
 
 <script>
 let CUADROS = JSON.parse(localStorage.getItem('c_cuadros')) || [];
 let ACTS = JSON.parse(localStorage.getItem('c_acts')) || [];
 let REGS = JSON.parse(localStorage.getItem('c_regs')) || [];
-let isScanning = true; // Control de delay
+let isScanning = true;
 
 window.onload = () => {
     document.getElementById('sup').value = localStorage.getItem('c_sup') || "";
@@ -107,54 +115,70 @@ function filtrar() {
     document.getElementById('selA').innerHTML = ACTS.filter(a => a.n.toLowerCase().includes(fA) || a.id.includes(fA)).map(a => `<option value="${a.id}">${a.n}</option>`).join('');
 }
 
-function onScanSuccess(codigo) {
-    if(!isScanning) return; // Si está bloqueado por el delay, no hace nada
-
+// Función central para guardar registros
+function procesarRegistro(codigo) {
     const cSel = document.getElementById('selC');
     if(!cSel.value) return alert("Selecciona Cuadro primero");
 
-    // Lógica de registro
     const r = { 
-        id: Date.now(), // ID único para borrar
+        id: Date.now(),
         f: new Date().toLocaleDateString('en-GB'), 
         c: cSel.value, 
         a: document.getElementById('selA').value, 
-        e: codigo, 
+        e: codigo.trim(), 
         j: document.getElementById('selJ').value, 
         s: document.getElementById('sup').value, 
-        v: cSel.selectedOptions[0].dataset.v 
+        v: cSel.selectedOptions[0]?.dataset.v || ""
     };
 
     REGS.push(r);
-    localStorage.setItem('c_regs', JSON.stringify(REGS));
+    
+    // Gestión de memoria para muchos registros
+    try {
+        localStorage.setItem('c_regs', JSON.stringify(REGS));
+    } catch (e) {
+        alert("¡Memoria llena! Por favor exporta los datos y resetea.");
+    }
+    
     actualizarContador();
     
-    // Feedback Visual y Sonoro
     document.getElementById('status').innerText = "✅ REGISTRADO: " + codigo;
     document.getElementById('status').style.color = "blue";
-    const audio = new Audio('https://www.soundjay.com/buttons/beep-07a.mp3');
-    audio.play().catch(() => {});
+    new Audio('https://www.soundjay.com/buttons/beep-07a.mp3').play().catch(()=>{});
+}
 
-    // --- LÓGICA DE DELAY ---
+function registrarManual() {
+    const input = document.getElementById('manualCode');
+    if(input.value.trim() !== "") {
+        procesarRegistro(input.value);
+        input.value = "";
+        input.focus();
+    }
+}
+
+function onScanSuccess(codigo) {
+    if(!isScanning) return;
+    procesarRegistro(codigo);
     isScanning = false; 
     setTimeout(() => {
         isScanning = true;
-        document.getElementById('status').innerText = "LISTO PARA SIGUIENTE";
+        document.getElementById('status').innerText = "LISTO";
         document.getElementById('status').style.color = "var(--p)";
-    }, 2000); // 2000 milisegundos = 2 segundos de pausa
+    }, 1500);
 }
 
 function abrirRegistros() {
     const container = document.getElementById('listaRegistros');
-    container.innerHTML = REGS.length === 0 ? "<p>No hay registros hoy.</p>" : "";
+    container.innerHTML = REGS.length === 0 ? "<p>No hay registros.</p>" : "";
     
-    REGS.slice().reverse().forEach(r => {
+    // Solo mostramos los últimos 100 en pantalla para no trabar el celular, pero todos se guardan
+    REGS.slice(-100).reverse().forEach(r => {
         const div = document.createElement('div');
         div.className = 'reg-item';
         div.innerHTML = `
             <div class="reg-info">
                 <b>${r.e}</b><br>
-                <small>Cuadro: ${r.c} | Act: ${r.a}</small>
+                <small>${r.c} | ${r.a} | ${r.f}</small>
             </div>
             <button class="btn-del-mini" onclick="borrarRegistro(${r.id})">BORRAR</button>
         `;
@@ -164,11 +188,11 @@ function abrirRegistros() {
 }
 
 function borrarRegistro(id) {
-    if(confirm("¿Borrar este registro?")) {
+    if(confirm("¿Borrar?")) {
         REGS = REGS.filter(r => r.id !== id);
         localStorage.setItem('c_regs', JSON.stringify(REGS));
         actualizarContador();
-        abrirRegistros(); // Refrescar lista
+        abrirRegistros();
     }
 }
 
@@ -187,37 +211,33 @@ function procesarCarga() {
     });
     localStorage.setItem('c_cuadros', JSON.stringify(CUADROS));
     localStorage.setItem('c_acts', JSON.stringify(ACTS));
-    alert(`Carga: ${cCount} Cuadros, ${aCount} Actividades.`);
+    alert(`Cargados: ${cCount} Cuadros y ${aCount} Actividades.`);
     document.getElementById('config').style.display='none';
     filtrar();
 }
 
 function exportar() {
-    if(REGS.length === 0) return alert("No hay datos para exportar");
-    let csv = "date,cuadroId,actividadId,Columna1,jornadaId,encargadold,variedadId\n";
-    REGS.forEach(r => csv += `${r.f},${r.c},${r.a},${r.e},${r.j},${r.s},${r.v}\n`);
-    const blob = new Blob([csv], { type: 'text/csv' });
+    if(REGS.length === 0) return alert("No hay datos");
+    let csv = "\ufeffdate,cuadroId,actividadId,Columna1,jornadaId,encargadold,variedadId\n";
+    REGS.forEach(r => {
+        csv += `${r.f},${r.c},${r.a},"${r.e}",${r.j},"${r.s}","${r.v}"\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `Reporte_${new Date().toISOString().slice(0,10)}.csv`;
+    link.download = `Data_AgriCactus_${new Date().toISOString().slice(0,10)}.csv`;
     link.click();
 }
 
 function resetTotal() {
-    if(confirm("¿BORRAR TODO? Se perderán configuraciones y registros.")) {
+    if(confirm("¿BORRAR TODO?")) {
         localStorage.clear();
         location.reload();
     }
 }
 
-const scanner = new Html5QrcodeScanner("reader", { 
-    fps: 20, 
-    qrbox: 250,
-    rememberLastUsedCamera: true
-});
+const scanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 });
 scanner.render(onScanSuccess);
 </script>
 </body>
 </html>
-
-

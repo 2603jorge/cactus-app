@@ -4,24 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AgriCactus Sistema Maestro</title>
-    <script src="https://unpkg.com/html5-qrcode" onerror="console.log('Modo manual: Sin internet para cargar cámara')"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        :root { --p: #1b5e20; --s: #f4f7f6; --danger: #c62828; --info: #0277bd; --accent: #ff9800; --success: #2e7d32; }
+        :root { --p: #1b5e20; --s: #f4f7f6; --danger: #c62828; --info: #0277bd; --accent: #ff9800; }
         body { font-family: sans-serif; background: var(--s); margin: 0; padding: 10px; padding-bottom: 80px; }
         .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 15px; }
         label { display: block; font-weight: bold; font-size: 11px; color: #555; margin-top: 10px; }
         input, select { width: 100%; height: 50px; margin-top: 5px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; padding: 0 10px; box-sizing: border-box; }
         .nav-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
-        .btn-nav { padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; color: white; }
+        .btn-nav { padding: 12px; border: none; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; }
         .btn-config { background: #607d8b; }
         .btn-view { background: var(--info); }
-        .manual-entry { display: flex; gap: 5px; margin-bottom: 10px; }
-        .manual-entry input { margin-top: 0; border: 2px solid var(--accent); }
-        .btn-manual { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 15px; font-weight: bold; cursor: pointer; }
-        .btn-export { width: 100%; background: var(--p); color: white; padding: 20px; border: none; border-radius: 10px; font-weight: bold; font-size: 16px; cursor: pointer; position: fixed; bottom: 10px; left: 0; width: calc(100% - 20px); margin: 0 10px; z-index: 100; }
-        #status { text-align: center; font-weight: bold; padding: 15px; border-radius: 8px; margin-top: 10px; font-size: 16px; }
-        .reg-item { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 10px 0; font-size: 13px; }
-        .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:2000; overflow-y: auto; padding: 20px; box-sizing: border-box; }
+        #status { text-align: center; font-weight: bold; padding: 15px; border-radius: 8px; margin-top: 10px; }
+        .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:2000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+        .btn-manual { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 15px; font-weight: bold; }
+        .btn-export { width: calc(100% - 20px); background: var(--p); color: white; padding: 20px; border: none; border-radius: 10px; font-weight: bold; position: fixed; bottom: 10px; left: 10px; }
     </style>
 </head>
 <body>
@@ -33,47 +30,48 @@
 
 <div id="config" class="modal">
     <h3>Configuración</h3>
-    <label>PEGAR LISTADO (CSV)</label>
-    <p style="font-size: 10px; color: gray;">
-        Cuadros: ID_CUADRO, NOMBRE, VARIEDAD<br>
-        Actividades: ID_ACT, NOMBRE<br>
-        Puestos Fijos: ID_EMPLEADO, NOMBRE, PUESTO
-    </p>
-    <textarea id="importInput" style="width:100%; height:150px; border: 1px solid #999;" placeholder="Ejemplo Puesto Fijo: 101, Juan Perez, REGADOR"></textarea>
-    <button onclick="procesarCarga()" style="width:100%; padding:15px; background:black; color:white; margin-top:10px; border:none; border-radius:8px;">📥 ACTUALIZAR TODO</button>
-    <button onclick="document.getElementById('config').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px;">❌ CERRAR</button>
+    <label>PEGAR MAPEO (ACTIVIDAD, EMPLEADO)</label>
+    <textarea id="importPuestos" style="width:100%; height:100px; border: 1px solid #999;" placeholder="Ejemplo: 1000, 13534"></textarea>
+    <button onclick="guardarMapeo()" style="width:100%; padding:15px; background:var(--p); color:white; margin-top:5px; border:none; border-radius:8px;">💾 GUARDAR ASIGNACIONES</button>
+    
+    <hr style="margin:20px 0;">
+    
+    <label>CATÁLOGOS (CUADROS O ACTIVIDADES GENERALES)</label>
+    <textarea id="importInput" style="width:100%; height:100px; border: 1px solid #999;"></textarea>
+    <button onclick="procesarCarga()" style="width:100%; padding:15px; background:black; color:white; margin-top:5px; border:none; border-radius:8px;">📥 CARGAR CATÁLOGOS</button>
+    
+    <button onclick="document.getElementById('config').style.display='none'" style="width:100%; padding:15px; margin-top:30px; background:#ddd; border:none; border-radius:8px;">❌ CERRAR</button>
 </div>
 
 <div class="card">
     <label>SUPERVISOR</label>
     <input type="text" id="sup" oninput="localStorage.setItem('c_sup', this.value)">
+    
     <label>CUADRO / LOTE</label>
-    <input type="text" id="busC" placeholder="Buscar cuadro..." oninput="filtrar()">
+    <input type="text" id="busC" placeholder="Buscar..." oninput="filtrar()">
     <select id="selC"></select>
-    <label>ACTIVIDAD (Para personal general)</label>
-    <input type="text" id="busA" placeholder="Buscar actividad..." oninput="filtrar()">
+
+    <label>ACTIVIDAD (Para personal sin puesto fijo)</label>
+    <input type="text" id="busA" placeholder="Buscar..." oninput="filtrar()">
     <select id="selA"></select>
-    <label>JORNADA</label>
-    <select id="selJ">
-        <option value="9">MATUTINA</option>
-        <option value="11">VESPERTINA</option>
-        <option value="20">CONTRATO</option>
-    </select>
 </div>
 
 <div class="card">
-    <div class="manual-entry">
+    <div style="display:flex; gap:5px; margin-bottom:10px;">
         <input type="text" id="manualCode" placeholder="Código..." onkeypress="if(event.key==='Enter') registrarManual()">
         <button class="btn-manual" onclick="registrarManual()">AÑADIR</button>
     </div>
     <div id="reader"></div>
-    <div id="status">ESPERANDO ESCANEO...</div>
+    <div id="status">LISTO</div>
 </div>
 
 <button class="btn-export" onclick="exportar()">DESCARGAR REPORTE (CSV)</button>
 
 <div id="modalRegs" class="modal">
-    <h3>Registros</h3>
+    <div style="display:flex; justify-content:space-between;">
+        <h3>Registros</h3>
+        <button onclick="limpiarSoloRegistros()" style="color:red; border:none; background:none;">🗑️ Borrar Todo</button>
+    </div>
     <div id="listaRegistros"></div>
     <button onclick="document.getElementById('modalRegs').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px;">❌ VOLVER</button>
 </div>
@@ -81,27 +79,27 @@
 <script>
 let CUADROS = JSON.parse(localStorage.getItem('c_cuadros')) || [];
 let ACTS = JSON.parse(localStorage.getItem('c_acts')) || [];
-let PUESTOS_ESPECIALES = JSON.parse(localStorage.getItem('c_puestos')) || {};
+let MAPEO_PUESTOS = JSON.parse(localStorage.getItem('c_mapeo')) || {}; // { "13534": "1000" }
 let REGS = JSON.parse(localStorage.getItem('c_regs')) || [];
 let isScanning = true;
 
-function beep(freq, dur, type) {
+// PITIDOS
+function beep(f, d, t) {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
+    const o = ctx.createOscillator();
     const g = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
-    osc.connect(g); g.connect(ctx.destination);
-    osc.start();
-    g.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + dur/1000);
-    osc.stop(ctx.currentTime + dur/1000);
+    o.type = t; o.frequency.value = f;
+    o.connect(g); g.connect(ctx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + d/1000);
+    o.stop(ctx.currentTime + d/1000);
 }
 
 function filtrar() {
     const fC = document.getElementById('busC').value;
     const fA = document.getElementById('busA').value.toLowerCase();
     document.getElementById('selC').innerHTML = CUADROS.filter(c => c.id.includes(fC)).map(c => `<option value="${c.id}" data-v="${c.v}">${c.n}</option>`).join('');
-    document.getElementById('selA').innerHTML = ACTS.filter(a => a.n.toLowerCase().includes(fA)).map(a => `<option value="${a.id}">${a.n}</option>`).join('');
+    document.getElementById('selA').innerHTML = ACTS.filter(a => a.n.toLowerCase().includes(fA) || a.id.includes(fA)).map(a => `<option value="${a.id}">${a.n}</option>`).join('');
 }
 
 function procesarRegistro(codigo) {
@@ -109,30 +107,29 @@ function procesarRegistro(codigo) {
     const status = document.getElementById('status');
     const cSel = document.getElementById('selC');
 
-    if(!cSel.value) return alert("Selecciona Cuadro");
-
-    // VALIDACIONES
-    if(cod.length > 5) {
-        beep(150, 600, 'square');
-        status.innerText = "❌ ERROR: +5 DÍGITOS";
-        status.style.background = "#ffcdd2";
-        return;
-    }
-    if(REGS.find(r => r.e === cod)) {
-        beep(150, 600, 'square');
-        status.innerText = "❌ YA ESCANEADO: " + cod;
-        status.style.background = "#ffcdd2";
-        return;
-    }
-
-    // LÓGICA DE PUESTO CARGADO
-    let act = PUESTOS_ESPECIALES[cod] ? PUESTOS_ESPECIALES[cod] : document.getElementById('selA').value;
+    if(!cSel.value) { alert("Elige Cuadro"); return; }
     
+    // VALIDACIONES: Duplicados y Longitud
+    if(cod.length > 5) { beep(150, 600, 'square'); status.innerText = "❌ ERROR: +5 DÍGITOS"; status.style.background = "#ffcdd2"; return; }
+    if(REGS.find(r => r.e === cod)) { beep(150, 600, 'square'); status.innerText = "❌ DUPLICADO: " + cod; status.style.background = "#ffcdd2"; return; }
+
+    // ASIGNACIÓN DE ACTIVIDAD (Mapeo automático)
+    let actId;
+    let esAuto = false;
+
+    if (MAPEO_PUESTOS[cod]) {
+        actId = MAPEO_PUESTOS[cod]; // Uso el código de actividad del mapeo (ej: 1000)
+        esAuto = true;
+    } else {
+        actId = document.getElementById('selA').value; // Uso el del selector manual
+    }
+
     beep(880, 150, 'sine');
     
     const r = {
-        id: Date.now(), f: new Date().toLocaleDateString('en-GB'),
-        c: cSel.value, a: act, e: cod,
+        id: Date.now(),
+        f: new Date().toLocaleDateString('en-GB'),
+        c: cSel.value, a: actId, e: cod,
         j: document.getElementById('selJ').value,
         s: document.getElementById('sup').value,
         v: cSel.selectedOptions[0]?.dataset.v || ""
@@ -142,50 +139,80 @@ function procesarRegistro(codigo) {
     localStorage.setItem('c_regs', JSON.stringify(REGS));
     document.getElementById('count').innerText = REGS.length;
     
-    status.innerText = PUESTOS_ESPECIALES[cod] ? `⭐ AUTO: ${cod} (${act})` : `✅ OK: ${cod}`;
-    status.style.background = PUESTOS_ESPECIALES[cod] ? "#c8e6c9" : "#e3f2fd";
+    status.innerText = esAuto ? `⭐ AUTO: ${cod} → Act ${actId}` : `✅ OK: ${cod}`;
+    status.style.background = esAuto ? "#c8e6c9" : "#e3f2fd";
+}
+
+function guardarMapeo() {
+    const lines = document.getElementById('importPuestos').value.trim().split('\n');
+    let nuevoMapeo = {};
+    lines.forEach(l => {
+        const p = l.split(',');
+        if(p.length === 2) {
+            const act = p[0].trim();
+            const emp = p[1].trim();
+            nuevoMapeo[emp] = act; // Guardamos { "13534": "1000" }
+        }
+    });
+    MAPEO_PUESTOS = nuevoMapeo;
+    localStorage.setItem('c_mapeo', JSON.stringify(MAPEO_PUESTOS));
+    alert("Mapeo de empleados actualizado");
 }
 
 function procesarCarga() {
-    const raw = document.getElementById('importInput').value.trim().split('\n');
-    let nuevosCuadros = [];
-    let nuevasActs = [];
-    let nuevosPuestos = {};
-
-    raw.forEach(linea => {
-        const p = linea.split(',');
-        if(p.length === 3) {
-            // Si el primer dato es un número de empleado (ej: 101), es puesto fijo
-            if(!isNaN(p[0]) && p[0].length <= 5 && p[2].toUpperCase() === p[2]) { 
-                nuevosPuestos[p[0].trim()] = p[2].trim();
-            } else {
-                nuevosCuadros.push({id: p[0].trim(), n: p[1].trim(), v: p[2].trim()});
-            }
-        } else if(p.length === 2) {
-            nuevasActs.push({id: p[0].trim(), n: p[1].trim()});
-        }
+    const lines = document.getElementById('importInput').value.trim().split('\n');
+    let nC = [], nA = [];
+    lines.forEach(l => {
+        const p = l.split(',');
+        if(p.length === 3) nC.push({id: p[0].trim(), n: p[1].trim(), v: p[2].trim()});
+        else if(p.length === 2) nA.push({id: p[0].trim(), n: p[1].trim()});
     });
-
-    if(nuevosCuadros.length > 0) { CUADROS = nuevosCuadros; localStorage.setItem('c_cuadros', JSON.stringify(CUADROS)); }
-    if(nuevasActs.length > 0) { ACTS = nuevasActs; localStorage.setItem('c_acts', JSON.stringify(ACTS)); }
-    PUESTOS_ESPECIALES = nuevosPuestos; localStorage.setItem('c_puestos', JSON.stringify(PUESTOS_ESPECIALES));
-
-    alert("Listas actualizadas correctamente");
-    document.getElementById('config').style.display = 'none';
+    if(nC.length) { CUADROS = nC; localStorage.setItem('c_cuadros', JSON.stringify(CUADROS)); }
+    if(nA.length) { ACTS = nA; localStorage.setItem('c_acts', JSON.stringify(ACTS)); }
+    alert("Catálogos cargados");
     filtrar();
 }
 
-// Funciones de soporte (iguales al anterior)
+function registrarManual() {
+    const i = document.getElementById('manualCode');
+    if(i.value) { procesarRegistro(i.value); i.value = ""; i.focus(); }
+}
+
 function onScanSuccess(c) { if(!isScanning) return; isScanning = false; procesarRegistro(c); setTimeout(()=>isScanning=true, 2000); }
-function registrarManual() { const i = document.getElementById('manualCode'); if(i.value){ procesarRegistro(i.value); i.value=""; i.focus(); } }
-function abrirRegistros() { /* mismo codigo anterior para mostrar lista */ }
-function exportar() { /* mismo codigo anterior para generar CSV */ }
+
+function abrirRegistros() {
+    const container = document.getElementById('listaRegistros');
+    container.innerHTML = REGS.length === 0 ? "Vacio" : "";
+    REGS.slice().reverse().forEach(r => {
+        const d = document.createElement('div');
+        d.style.borderBottom = "1px solid #eee"; d.style.padding = "10px 0";
+        d.innerHTML = `<b>${r.e}</b> → Act: ${r.a}<br><small>${r.c}</small>`;
+        container.appendChild(d);
+    });
+    document.getElementById('modalRegs').style.display = 'block';
+}
+
+function limpiarSoloRegistros() {
+    if(confirm("¿Borrar todo?")) { REGS = []; localStorage.setItem('c_regs', JSON.stringify(REGS)); location.reload(); }
+}
+
+function exportar() {
+    let csv = "\ufeffFecha,Cuadro,Actividad,Empleado,Jornada,Supervisor,Variedad\n";
+    REGS.forEach(r => { csv += `${r.f},${r.c},${r.a},"${r.e}",${r.j},"${r.s}","${r.v}"\n`; });
+    const b = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(b);
+    a.download = `Reporte.csv`;
+    a.click();
+}
 
 window.onload = () => {
     document.getElementById('sup').value = localStorage.getItem('c_sup') || "";
     document.getElementById('count').innerText = REGS.length;
     filtrar();
-    new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }).render(onScanSuccess);
+    if(typeof Html5QrcodeScanner !== 'undefined') {
+        new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }).render(onScanSuccess);
+    }
 };
 </script>
 </body>

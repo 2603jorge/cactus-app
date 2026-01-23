@@ -15,10 +15,10 @@
         .btn-nav { padding: 12px; border: none; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; }
         .btn-config { background: #607d8b; }
         .btn-view { background: var(--info); }
-        #status { text-align: center; font-weight: bold; padding: 15px; border-radius: 8px; margin-top: 10px; }
+        #status { text-align: center; font-weight: bold; padding: 15px; border-radius: 8px; margin-top: 10px; border: 1px solid #ddd; }
         .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:2000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
-        .btn-manual { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 15px; font-weight: bold; }
         .btn-export { width: calc(100% - 20px); background: var(--p); color: white; padding: 20px; border: none; border-radius: 10px; font-weight: bold; position: fixed; bottom: 10px; left: 10px; }
+        .reg-item { border-bottom: 1px solid #eee; padding: 10px 0; display: flex; justify-content: space-between; align-items: center; }
     </style>
 </head>
 <body>
@@ -29,14 +29,14 @@
 </div>
 
 <div id="config" class="modal">
-    <h3>Configuración</h3>
-    <label>PEGAR MAPEO (ACTIVIDAD, EMPLEADO)</label>
+    <h3>Configuración de Mapeo</h3>
+    <label>ASIGNAR ACTIVIDAD A EMPLEADO (ID_ACTIVIDAD, ID_EMPLEADO)</label>
     <textarea id="importPuestos" style="width:100%; height:100px; border: 1px solid #999;" placeholder="Ejemplo: 1000, 13534"></textarea>
     <button onclick="guardarMapeo()" style="width:100%; padding:15px; background:var(--p); color:white; margin-top:5px; border:none; border-radius:8px;">💾 GUARDAR ASIGNACIONES</button>
     
     <hr style="margin:20px 0;">
     
-    <label>CATÁLOGOS (CUADROS O ACTIVIDADES GENERALES)</label>
+    <label>CATÁLOGOS GENERALES (CUADROS Y ACTIVIDADES)</label>
     <textarea id="importInput" style="width:100%; height:100px; border: 1px solid #999;"></textarea>
     <button onclick="procesarCarga()" style="width:100%; padding:15px; background:black; color:white; margin-top:5px; border:none; border-radius:8px;">📥 CARGAR CATÁLOGOS</button>
     
@@ -51,27 +51,24 @@
     <input type="text" id="busC" placeholder="Buscar..." oninput="filtrar()">
     <select id="selC"></select>
 
-    <label>ACTIVIDAD (Para personal sin puesto fijo)</label>
+    <label>ACTIVIDAD (Manual)</label>
     <input type="text" id="busA" placeholder="Buscar..." oninput="filtrar()">
     <select id="selA"></select>
 </div>
 
 <div class="card">
     <div style="display:flex; gap:5px; margin-bottom:10px;">
-        <input type="text" id="manualCode" placeholder="Código..." onkeypress="if(event.key==='Enter') registrarManual()">
-        <button class="btn-manual" onclick="registrarManual()">AÑADIR</button>
+        <input type="number" id="manualCode" placeholder="Escanear o teclear..." onkeypress="if(event.key==='Enter') registrarManual()">
+        <button style="background:var(--accent); color:white; border:none; border-radius:8px; padding:0 15px;" onclick="registrarManual()">AÑADIR</button>
     </div>
     <div id="reader"></div>
-    <div id="status">LISTO</div>
+    <div id="status">LISTO PARA ESCANEAR</div>
 </div>
 
 <button class="btn-export" onclick="exportar()">DESCARGAR REPORTE (CSV)</button>
 
 <div id="modalRegs" class="modal">
-    <div style="display:flex; justify-content:space-between;">
-        <h3>Registros</h3>
-        <button onclick="limpiarSoloRegistros()" style="color:red; border:none; background:none;">🗑️ Borrar Todo</button>
-    </div>
+    <h3>Registros del Día</h3>
     <div id="listaRegistros"></div>
     <button onclick="document.getElementById('modalRegs').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px;">❌ VOLVER</button>
 </div>
@@ -79,20 +76,32 @@
 <script>
 let CUADROS = JSON.parse(localStorage.getItem('c_cuadros')) || [];
 let ACTS = JSON.parse(localStorage.getItem('c_acts')) || [];
-let MAPEO_PUESTOS = JSON.parse(localStorage.getItem('c_mapeo')) || {}; // { "13534": "1000" }
+let MAPEO_PUESTOS = JSON.parse(localStorage.getItem('c_mapeo')) || {}; 
 let REGS = JSON.parse(localStorage.getItem('c_regs')) || [];
 let isScanning = true;
 
-// PITIDOS
-function beep(f, d, t) {
+// FUNCIÓN DE PITIDO (Audio Context)
+function sonar(tipo) {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = t; o.frequency.value = f;
-    o.connect(g); g.connect(ctx.destination);
-    o.start();
-    g.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + d/1000);
-    o.stop(ctx.currentTime + d/1000);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    if(tipo === 'exito') {
+        osc.frequency.value = 880; // Agudo
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        osc.start();
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+        osc.stop(ctx.currentTime + 0.2);
+    } else {
+        osc.frequency.value = 110; // Grave
+        osc.type = 'square';
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        osc.start();
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
+        osc.stop(ctx.currentTime + 0.5);
+    }
 }
 
 function filtrar() {
@@ -107,24 +116,38 @@ function procesarRegistro(codigo) {
     const status = document.getElementById('status');
     const cSel = document.getElementById('selC');
 
-    if(!cSel.value) { alert("Elige Cuadro"); return; }
+    if(!cSel.value) { alert("⚠️ Primero selecciona un Cuadro"); return; }
     
-    // VALIDACIONES: Duplicados y Longitud
-    if(cod.length > 5) { beep(150, 600, 'square'); status.innerText = "❌ ERROR: +5 DÍGITOS"; status.style.background = "#ffcdd2"; return; }
-    if(REGS.find(r => r.e === cod)) { beep(150, 600, 'square'); status.innerText = "❌ DUPLICADO: " + cod; status.style.background = "#ffcdd2"; return; }
+    // VALIDACIÓN 1: Largo del código de empleado
+    if(cod.length > 5) {
+        sonar('error');
+        status.innerText = "❌ ERROR: MÁS DE 5 DÍGITOS (" + cod + ")";
+        status.style.background = "#ffcdd2";
+        status.style.color = "#c62828";
+        return;
+    }
 
-    // ASIGNACIÓN DE ACTIVIDAD (Mapeo automático)
+    // VALIDACIÓN 2: Duplicados
+    if(REGS.find(r => r.e === cod)) {
+        sonar('error');
+        status.innerText = "❌ ERROR: YA ESCANEADO (" + cod + ")";
+        status.style.background = "#ffcdd2";
+        status.style.color = "#c62828";
+        return;
+    }
+
+    // LÓGICA DE ASIGNACIÓN
     let actId;
     let esAuto = false;
 
     if (MAPEO_PUESTOS[cod]) {
-        actId = MAPEO_PUESTOS[cod]; // Uso el código de actividad del mapeo (ej: 1000)
+        actId = MAPEO_PUESTOS[cod]; // Usa el número de actividad del mapeo (ej: 1000)
         esAuto = true;
     } else {
-        actId = document.getElementById('selA').value; // Uso el del selector manual
+        actId = document.getElementById('selA').value; // Usa el número seleccionado en el menú
     }
 
-    beep(880, 150, 'sine');
+    sonar('exito');
     
     const r = {
         id: Date.now(),
@@ -139,8 +162,9 @@ function procesarRegistro(codigo) {
     localStorage.setItem('c_regs', JSON.stringify(REGS));
     document.getElementById('count').innerText = REGS.length;
     
-    status.innerText = esAuto ? `⭐ AUTO: ${cod} → Act ${actId}` : `✅ OK: ${cod}`;
+    status.innerText = esAuto ? `⭐ AUTO: EMP ${cod} → ACT ${actId}` : `✅ REGISTRO: ${cod}`;
     status.style.background = esAuto ? "#c8e6c9" : "#e3f2fd";
+    status.style.color = esAuto ? "#1b5e20" : "#0277bd";
 }
 
 function guardarMapeo() {
@@ -149,14 +173,14 @@ function guardarMapeo() {
     lines.forEach(l => {
         const p = l.split(',');
         if(p.length === 2) {
-            const act = p[0].trim();
-            const emp = p[1].trim();
-            nuevoMapeo[emp] = act; // Guardamos { "13534": "1000" }
+            const actCod = p[0].trim(); // El 1000
+            const empCod = p[1].trim(); // El 13534
+            nuevoMapeo[empCod] = actCod;
         }
     });
     MAPEO_PUESTOS = nuevoMapeo;
     localStorage.setItem('c_mapeo', JSON.stringify(MAPEO_PUESTOS));
-    alert("Mapeo de empleados actualizado");
+    alert("✅ Mapeo actualizado: " + Object.keys(MAPEO_PUESTOS).length + " empleados asignados.");
 }
 
 function procesarCarga() {
@@ -169,7 +193,7 @@ function procesarCarga() {
     });
     if(nC.length) { CUADROS = nC; localStorage.setItem('c_cuadros', JSON.stringify(CUADROS)); }
     if(nA.length) { ACTS = nA; localStorage.setItem('c_acts', JSON.stringify(ACTS)); }
-    alert("Catálogos cargados");
+    alert("✅ Catálogos actualizados.");
     filtrar();
 }
 
@@ -178,31 +202,40 @@ function registrarManual() {
     if(i.value) { procesarRegistro(i.value); i.value = ""; i.focus(); }
 }
 
-function onScanSuccess(c) { if(!isScanning) return; isScanning = false; procesarRegistro(c); setTimeout(()=>isScanning=true, 2000); }
+function onScanSuccess(c) { 
+    if(!isScanning) return; 
+    isScanning = false; 
+    procesarRegistro(c); 
+    setTimeout(()=>isScanning=true, 2000); 
+}
 
 function abrirRegistros() {
     const container = document.getElementById('listaRegistros');
-    container.innerHTML = REGS.length === 0 ? "Vacio" : "";
+    container.innerHTML = REGS.length === 0 ? "Sin datos" : "";
     REGS.slice().reverse().forEach(r => {
         const d = document.createElement('div');
-        d.style.borderBottom = "1px solid #eee"; d.style.padding = "10px 0";
-        d.innerHTML = `<b>${r.e}</b> → Act: ${r.a}<br><small>${r.c}</small>`;
+        d.className = 'reg-item';
+        d.innerHTML = `<span><b>${r.e}</b> (Act: ${r.a})</span><button onclick="borrarRegistro(${r.id})" style="border:none; background:none; color:red;">✖</button>`;
         container.appendChild(d);
     });
     document.getElementById('modalRegs').style.display = 'block';
 }
 
-function limpiarSoloRegistros() {
-    if(confirm("¿Borrar todo?")) { REGS = []; localStorage.setItem('c_regs', JSON.stringify(REGS)); location.reload(); }
+function borrarRegistro(id) {
+    REGS = REGS.filter(r => r.id !== id);
+    localStorage.setItem('c_regs', JSON.stringify(REGS));
+    document.getElementById('count').innerText = REGS.length;
+    abrirRegistros();
 }
 
 function exportar() {
+    if(REGS.length === 0) { alert("No hay datos"); return; }
     let csv = "\ufeffFecha,Cuadro,Actividad,Empleado,Jornada,Supervisor,Variedad\n";
     REGS.forEach(r => { csv += `${r.f},${r.c},${r.a},"${r.e}",${r.j},"${r.s}","${r.v}"\n`; });
     const b = new Blob([csv], {type:'text/csv;charset=utf-8;'});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b);
-    a.download = `Reporte.csv`;
+    a.download = `Reporte_${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
 }
 

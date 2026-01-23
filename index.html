@@ -98,12 +98,25 @@ let ACTS = JSON.parse(localStorage.getItem('c_acts')) || [];
 let REGS = JSON.parse(localStorage.getItem('c_regs')) || [];
 let isScanning = true;
 
+// --- FUNCIÓN PARA EL PITIDO ---
+function beep(frecuencia = 440, duracion = 200, tipo = 'sine') {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    oscillator.type = tipo;
+    oscillator.frequency.setValueAtTime(frecuencia, audioCtx.currentTime);
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.start();
+    gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duracion/1000);
+    oscillator.stop(audioCtx.currentTime + duracion/1000);
+}
+
 window.onload = () => {
     document.getElementById('sup').value = localStorage.getItem('c_sup') || "";
     actualizarContador();
     filtrar();
     
-    // Verificar si cargó la librería de la cámara
     if (typeof Html5QrcodeScanner === 'undefined') {
         document.getElementById('offline-notice').style.display = 'block';
         document.getElementById('reader').innerHTML = "<p style='text-align:center; color:gray;'>Cámara no disponible sin internet.<br>Usa el modo manual arriba.</p>";
@@ -128,14 +141,37 @@ function filtrar() {
 
 function procesarRegistro(codigo) {
     const cSel = document.getElementById('selC');
+    const codLimpio = codigo.trim();
+
+    // 1. VALIDACIÓN: Seleccionar cuadro
     if(!cSel.value) return alert("Error: Selecciona un Cuadro primero.");
+
+    // 2. VALIDACIÓN: Más de 5 dígitos
+    if(codLimpio.length > 5) {
+        beep(150, 500, 'square'); // Pitido de error (grave)
+        document.getElementById('status').innerText = "❌ ERROR: MÁXIMO 5 DÍGITOS";
+        document.getElementById('status').style.color = "red";
+        return false;
+    }
+
+    // 3. VALIDACIÓN: Duplicados
+    const existe = REGS.find(r => r.e === codLimpio);
+    if(existe) {
+        beep(150, 500, 'square'); // Pitido de error
+        document.getElementById('status').innerText = "❌ ERROR: YA ESCANEADO (" + codLimpio + ")";
+        document.getElementById('status').style.color = "red";
+        return false;
+    }
+
+    // Si pasa las validaciones...
+    beep(880, 150, 'sine'); // Pitido de éxito (agudo)
 
     const r = { 
         id: Date.now(),
         f: new Date().toLocaleDateString('en-GB'), 
         c: cSel.value, 
         a: document.getElementById('selA').value, 
-        e: codigo.trim(), 
+        e: codLimpio, 
         j: document.getElementById('selJ').value, 
         s: document.getElementById('sup').value, 
         v: cSel.selectedOptions[0]?.dataset.v || ""
@@ -144,26 +180,31 @@ function procesarRegistro(codigo) {
     REGS.push(r);
     localStorage.setItem('c_regs', JSON.stringify(REGS));
     actualizarContador();
-    document.getElementById('status').innerText = "✅ OK: " + codigo;
+    document.getElementById('status').innerText = "✅ OK: " + codLimpio;
     document.getElementById('status').style.color = "blue";
+    return true;
 }
 
 function registrarManual() {
     const input = document.getElementById('manualCode');
     if(input.value.trim() !== "") {
-        procesarRegistro(input.value);
-        input.value = "";
-        input.focus();
+        if(procesarRegistro(input.value)) {
+            input.value = "";
+            input.focus();
+        }
     }
 }
 
 function onScanSuccess(codigo) {
     if(!isScanning) return;
+    
+    isScanning = false; // Bloqueo temporal para evitar múltiples lecturas
     procesarRegistro(codigo);
-    isScanning = false; 
-    setTimeout(() => { isScanning = true; }, 1500);
+    
+    setTimeout(() => { isScanning = true; }, 2000); // Espera 2 segundos para el siguiente escaneo
 }
 
+// ... Resto de funciones (abrirRegistros, borrarRegistro, etc.) se mantienen igual ...
 function abrirRegistros() {
     const container = document.getElementById('listaRegistros');
     container.innerHTML = REGS.length === 0 ? "<p>Vacío</p>" : "";

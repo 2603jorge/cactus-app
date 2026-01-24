@@ -15,10 +15,12 @@
         .btn-nav { padding: 12px; border: none; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; }
         .btn-config { background: #607d8b; }
         .btn-view { background: var(--info); }
-        #status { text-align: center; font-weight: bold; padding: 15px; border-radius: 8px; margin-top: 10px; border: 1px solid #ddd; }
+        #status { text-align: center; font-weight: bold; padding: 15px; border-radius: 8px; margin-top: 10px; border: 1px solid #ddd; min-height: 20px; }
         .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:2000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
-        .btn-export { width: calc(100% - 20px); background: var(--p); color: white; padding: 20px; border: none; border-radius: 10px; font-weight: bold; position: fixed; bottom: 10px; left: 10px; }
+        .btn-export { width: calc(100% - 20px); background: var(--p); color: white; padding: 20px; border: none; border-radius: 10px; font-weight: bold; position: fixed; bottom: 10px; left: 10px; z-index: 1000; }
         textarea { width:100%; height:120px; border: 2px solid #ccc; border-radius: 8px; font-family: monospace; padding: 10px; box-sizing: border-box; margin-top: 5px; }
+        .manual-container { display: flex; gap: 8px; margin-top: 15px; }
+        .btn-manual-add { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 20px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
     </style>
 </head>
 <body>
@@ -30,15 +32,14 @@
 
 <div id="config" class="modal">
     <h3 style="margin-top:0;">Editor de Mapeo</h3>
-    <label>ID_ACTIVIDAD, ID_EMPLEADO (Uno por línea)</label>
-    <textarea id="importPuestos" placeholder="1000, 13534"></textarea>
+    <label>ID_ACTIVIDAD, ID_EMPLEADO</label>
+    <textarea id="importPuestos" placeholder="Ejemplo: 1000, 13534"></textarea>
     <button onclick="guardarMapeo()" style="width:100%; padding:15px; background:var(--p); color:white; margin-top:10px; border:none; border-radius:8px; font-weight:bold;">💾 ACTUALIZAR ASIGNACIONES</button>
     
     <hr style="margin:25px 0; border: 0; border-top: 1px solid #eee;">
     
     <h3>Catálogos</h3>
-    <label>CUADROS Y ACTIVIDADES (CSV)</label>
-    <textarea id="importInput" placeholder="C1, Cuadro 1, Variedad"></textarea>
+    <textarea id="importInput" placeholder="C1, Lote 1, Variedad"></textarea>
     <button onclick="procesarCarga()" style="width:100%; padding:15px; background:black; color:white; margin-top:10px; border:none; border-radius:8px; font-weight:bold;">📥 CARGAR CATÁLOGOS</button>
     
     <button onclick="document.getElementById('config').style.display='none'" style="width:100%; padding:15px; margin-top:30px; background:#ddd; border:none; border-radius:8px; font-weight:bold;">❌ CERRAR</button>
@@ -48,28 +49,32 @@
     <label>SUPERVISOR</label>
     <input type="text" id="sup" oninput="localStorage.setItem('c_sup', this.value)">
     <label>CUADRO / LOTE</label>
-    <input type="text" id="busC" placeholder="Buscar..." oninput="filtrar()">
+    <input type="text" id="busC" placeholder="Buscar cuadro..." oninput="filtrar()">
     <select id="selC"></select>
-    <label>ACTIVIDAD (Manual)</label>
-    <input type="text" id="busA" placeholder="Buscar..." oninput="filtrar()">
+    <label>ACTIVIDAD (General)</label>
+    <input type="text" id="busA" placeholder="Buscar actividad..." oninput="filtrar()">
     <select id="selA"></select>
 </div>
 
 <div class="card">
-    <div id="reader"></div>
-    <div id="status">LISTO PARA ESCANEAR</div>
-    <div style="display:flex; gap:5px; margin-top:10px;">
-        <input type="number" id="manualCode" placeholder="Código manual..." onkeypress="if(event.key==='Enter') registrarManual()">
-        <button style="background:var(--accent); color:white; border:none; border-radius:8px; padding:0 15px;" onclick="registrarManual()">AÑADIR</button>
+    <div id="reader" style="width: 100%;"></div>
+    <div id="status">SISTEMA LISTO</div>
+    
+    <div class="manual-container">
+        <input type="text" id="manualCode" placeholder="Escribir ID..." onkeypress="if(event.key==='Enter') registrarManual()">
+        <button class="btn-manual-add" onclick="registrarManual()">AÑADIR</button>
     </div>
 </div>
 
 <button class="btn-export" onclick="exportar()">DESCARGAR REPORTE (CSV)</button>
 
 <div id="modalRegs" class="modal">
-    <h3>Registros del Día</h3>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3>Registros</h3>
+        <button onclick="limpiarSoloRegistros()" style="color:red; border:none; background:none; font-weight:bold;">BORRAR TODO</button>
+    </div>
     <div id="listaRegistros"></div>
-    <button onclick="document.getElementById('modalRegs').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px;">❌ VOLVER</button>
+    <button onclick="document.getElementById('modalRegs').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px; font-weight:bold;">❌ VOLVER</button>
 </div>
 
 <script>
@@ -95,34 +100,16 @@ function sonar(tipo) {
     }
 }
 
-// NUEVA FUNCIÓN: Al abrir config, rellena el área de texto con lo que ya existe
-function abrirConfig() {
-    const areaMapeo = document.getElementById('importPuestos');
-    // Convertimos el objeto {emp: act} a texto "act, emp"
-    let textoMapeo = "";
-    for (const [emp, act] of Object.entries(MAPEO_PUESTOS)) {
-        textoMapeo += `${act}, ${emp}\n`;
-    }
-    areaMapeo.value = textoMapeo.trim();
-    document.getElementById('config').style.display = 'block';
-}
-
-function guardarMapeo() {
-    const lines = document.getElementById('importPuestos').value.trim().split('\n');
-    let nuevoMapeo = {};
-    lines.forEach(l => {
-        const p = l.split(',');
-        if(p.length === 2) {
-            nuevoMapeo[p[1].trim()] = p[0].trim();
-        }
-    });
-    MAPEO_PUESTOS = nuevoMapeo;
-    localStorage.setItem('c_mapeo', JSON.stringify(MAPEO_PUESTOS));
-    alert("✅ Mapeo actualizado correctamente.");
+function filtrar() {
+    const fC = document.getElementById('busC').value;
+    const fA = document.getElementById('busA').value.toLowerCase();
+    document.getElementById('selC').innerHTML = CUADROS.filter(c => c.id.includes(fC)).map(c => `<option value="${c.id}" data-v="${c.v}">${c.n}</option>`).join('');
+    document.getElementById('selA').innerHTML = ACTS.filter(a => a.n.toLowerCase().includes(fA) || a.id.includes(fA)).map(a => `<option value="${a.id}">${a.n}</option>`).join('');
 }
 
 function procesarRegistro(codigo) {
-    const cod = codigo.trim();
+    if(!codigo) return;
+    const cod = codigo.toString().trim();
     const status = document.getElementById('status');
     const cSel = document.getElementById('selC');
 
@@ -145,13 +132,36 @@ function procesarRegistro(codigo) {
     document.getElementById('count').innerText = REGS.length;
     status.innerText = esAuto ? `⭐ AUTO: ${cod} → Act ${actId}` : `✅ REGISTRO: ${cod}`;
     status.style.background = esAuto ? "#c8e6c9" : "#e3f2fd";
+    status.style.color = esAuto ? "green" : "blue";
 }
 
-function filtrar() {
-    const fC = document.getElementById('busC').value;
-    const fA = document.getElementById('busA').value.toLowerCase();
-    document.getElementById('selC').innerHTML = CUADROS.filter(c => c.id.includes(fC)).map(c => `<option value="${c.id}" data-v="${c.v}">${c.n}</option>`).join('');
-    document.getElementById('selA').innerHTML = ACTS.filter(a => a.n.toLowerCase().includes(fA) || a.id.includes(fA)).map(a => `<option value="${a.id}">${a.n}</option>`).join('');
+function registrarManual() {
+    const input = document.getElementById('manualCode');
+    const valor = input.value.trim();
+    if(valor !== "") {
+        procesarRegistro(valor);
+        input.value = "";
+        input.focus();
+    }
+}
+
+function abrirConfig() {
+    let texto = "";
+    for (const [emp, act] of Object.entries(MAPEO_PUESTOS)) { texto += `${act}, ${emp}\n`; }
+    document.getElementById('importPuestos').value = texto.trim();
+    document.getElementById('config').style.display = 'block';
+}
+
+function guardarMapeo() {
+    const lines = document.getElementById('importPuestos').value.trim().split('\n');
+    let nuevo = {};
+    lines.forEach(l => {
+        const p = l.split(',');
+        if(p.length === 2) { nuevo[p[1].trim()] = p[0].trim(); }
+    });
+    MAPEO_PUESTOS = nuevo;
+    localStorage.setItem('c_mapeo', JSON.stringify(MAPEO_PUESTOS));
+    alert("✅ Mapeo actualizado");
 }
 
 function procesarCarga() {
@@ -167,16 +177,11 @@ function procesarCarga() {
     alert("✅ Catálogos cargados."); filtrar();
 }
 
-function registrarManual() {
-    const i = document.getElementById('manualCode');
-    if(i.value) { procesarRegistro(i.value); i.value = ""; i.focus(); }
-}
-
 function onScanSuccess(c) { if(!isScanning) return; isScanning = false; procesarRegistro(c); setTimeout(()=>isScanning=true, 2000); }
 
 function abrirRegistros() {
     const container = document.getElementById('listaRegistros');
-    container.innerHTML = REGS.length === 0 ? "Vacío" : "";
+    container.innerHTML = REGS.length === 0 ? "Sin datos" : "";
     REGS.slice().reverse().forEach(r => {
         const d = document.createElement('div');
         d.style.borderBottom = "1px solid #eee"; d.style.padding = "10px"; d.style.display="flex"; d.style.justifyContent="space-between";
@@ -193,13 +198,22 @@ function borrarReg(id) {
     abrirRegistros();
 }
 
+function limpiarSoloRegistros() {
+    if(confirm("¿Borrar todos los registros de hoy?")) {
+        REGS = []; localStorage.setItem('c_regs', JSON.stringify(REGS));
+        document.getElementById('count').innerText = "0";
+        abrirRegistros();
+    }
+}
+
 function exportar() {
+    if(REGS.length === 0) return alert("No hay datos");
     let csv = "\ufeffFecha,Cuadro,Actividad,Empleado,Jornada,Supervisor,Variedad\n";
     REGS.forEach(r => { csv += `${r.f},${r.c},${r.a},"${r.e}",${r.j},"${r.s}","${r.v}"\n`; });
     const b = new Blob([csv], {type:'text/csv;charset=utf-8;'});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b);
-    a.download = `Reporte.csv`; a.click();
+    a.download = `Reporte_${new Date().toISOString().slice(0,10)}.csv`; a.click();
 }
 
 window.onload = () => {

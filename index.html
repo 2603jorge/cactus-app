@@ -21,6 +21,9 @@
         textarea { width:100%; height:120px; border: 2px solid #ccc; border-radius: 8px; padding: 10px; box-sizing: border-box; }
         .manual-container { display: flex; gap: 8px; margin-top: 15px; }
         .btn-manual-add { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 20px; font-weight: bold; cursor: pointer; }
+        .reg-item { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 12px 0; }
+        .btn-del-single { background: #ffebee; color: #c62828; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .btn-del-all { background: #c62828; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -31,14 +34,14 @@
 </div>
 
 <div id="config" class="modal">
-    <h3 style="margin-top:0;">Editor de Mapeo (Automático)</h3>
+    <h3 style="margin-top:0;">Editor de Mapeo</h3>
     <label>ID_ACTIVIDAD, ID_EMPLEADO</label>
     <textarea id="importPuestos" placeholder="1000, 13534"></textarea>
     <button onclick="guardarMapeo()" style="width:100%; padding:15px; background:var(--p); color:white; margin-top:10px; border:none; border-radius:8px; font-weight:bold;">💾 ACTUALIZAR ASIGNACIONES</button>
     
     <hr style="margin:25px 0;">
     
-    <h3>Catálogos (Cuadros/Actividades)</h3>
+    <h3>Catálogos</h3>
     <textarea id="importInput" placeholder="C1, Lote 1, Variedad"></textarea>
     <button onclick="procesarCarga()" style="width:100%; padding:15px; background:black; color:white; margin-top:10px; border:none; border-radius:8px; font-weight:bold;">📥 CARGAR CATÁLOGOS</button>
     
@@ -58,10 +61,10 @@
 
 <div class="card">
     <div id="reader" style="width: 100%; background: #000; min-height: 250px;"></div>
-    <div id="status">INICIANDO...</div>
+    <div id="status">SISTEMA LISTO</div>
     
     <div class="manual-container">
-        <input type="text" id="manualCode" placeholder="Escribir código aquí...">
+        <input type="text" id="manualCode" placeholder="Escribir ID...">
         <button class="btn-manual-add" onclick="registrarManual()">AÑADIR</button>
     </div>
 </div>
@@ -69,20 +72,21 @@
 <button class="btn-export" onclick="exportar()">DESCARGAR REPORTE (CSV)</button>
 
 <div id="modalRegs" class="modal">
-    <h3>Registros de hoy</h3>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3>Registros de Hoy</h3>
+        <button class="btn-del-all" onclick="limpiarTodo()">🗑️ BORRAR TODO</button>
+    </div>
     <div id="listaRegistros"></div>
-    <button onclick="document.getElementById('modalRegs').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px;">❌ VOLVER</button>
+    <button onclick="document.getElementById('modalRegs').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px; font-weight:bold;">❌ VOLVER</button>
 </div>
 
 <script>
-// --- VARIABLES GLOBALES ---
 let CUADROS = JSON.parse(localStorage.getItem('c_cuadros')) || [];
 let ACTS = JSON.parse(localStorage.getItem('c_acts')) || [];
 let MAPEO_PUESTOS = JSON.parse(localStorage.getItem('c_mapeo')) || {}; 
 let REGS = JSON.parse(localStorage.getItem('c_regs')) || [];
 let scannerInstance = null;
 
-// --- SONIDOS ---
 function sonar(tipo) {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -98,64 +102,38 @@ function sonar(tipo) {
             osc.start(); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
             osc.stop(ctx.currentTime + 0.4);
         }
-    } catch(e) { console.log("Sonido bloqueado"); }
+    } catch(e) {}
 }
 
-// --- FUNCIÓN MAESTRA DE REGISTRO ---
 function procesarRegistro(codigo) {
     if(!codigo) return;
     const codLimpio = codigo.toString().trim();
     const status = document.getElementById('status');
     const cuadroId = document.getElementById('selC').value;
 
-    if(!cuadroId) {
-        alert("⚠️ Selecciona un CUADRO antes de escanear.");
-        return;
-    }
+    if(!cuadroId) { alert("⚠️ Selecciona un CUADRO primero"); return; }
+    if(REGS.find(r => r.e === codLimpio)) { sonar('error'); status.innerText = "❌ YA REGISTRADO: " + codLimpio; status.style.background = "#ffcdd2"; return; }
 
-    // Validar duplicado
-    if(REGS.find(r => r.e === codLimpio)) {
-        sonar('error');
-        status.innerText = "❌ YA REGISTRADO: " + codLimpio;
-        status.style.background = "#ffcdd2";
-        return;
-    }
-
-    // Validar largo
-    if(codLimpio.length > 8) { // Subí a 8 por si tus IDs son largos
-        sonar('error');
-        status.innerText = "❌ CÓDIGO MUY LARGO";
-        status.style.background = "#ffcdd2";
-        return;
-    }
-
-    // Lógica de Actividad Automática vs Manual
     let actIdFinal = MAPEO_PUESTOS[codLimpio] || document.getElementById('selA').value;
     let esAuto = !!MAPEO_PUESTOS[codLimpio];
 
-    // Guardar
-    const nuevoRegistro = {
+    REGS.push({
         id: Date.now(),
         f: new Date().toLocaleDateString('en-GB'),
         c: cuadroId,
         a: actIdFinal,
         e: codLimpio,
-        j: document.getElementById('selJ') ? document.getElementById('selJ').value : "9",
         s: document.getElementById('sup').value,
         v: document.getElementById('selC').selectedOptions[0]?.dataset.v || ""
-    };
+    });
 
-    REGS.push(nuevoRegistro);
     localStorage.setItem('c_regs', JSON.stringify(REGS));
-    
-    // UI
     document.getElementById('count').innerText = REGS.length;
-    status.innerText = esAuto ? `⭐ AUTO: ${codLimpio} (Act: ${actIdFinal})` : `✅ REGISTRO: ${codLimpio}`;
+    status.innerText = esAuto ? `⭐ AUTO: ${codLimpio} (Act: ${actIdFinal})` : `✅ OK: ${codLimpio}`;
     status.style.background = esAuto ? "#c8e6c9" : "#e3f2fd";
     sonar('exito');
 }
 
-// --- FUNCIONES INTERFAZ ---
 function registrarManual() {
     const input = document.getElementById('manualCode');
     if(input.value.trim() !== "") {
@@ -165,17 +143,51 @@ function registrarManual() {
     }
 }
 
+// --- FUNCIONES DE BORRADO ---
+function abrirRegistros() {
+    const cont = document.getElementById('listaRegistros');
+    if(REGS.length === 0) {
+        cont.innerHTML = "<p style='text-align:center; color:gray;'>No hay registros aún.</p>";
+    } else {
+        cont.innerHTML = REGS.slice().reverse().map(r => `
+            <div class="reg-item">
+                <div>
+                    <b>Emp: ${r.e}</b><br>
+                    <small>Act: ${r.a} | Cuadro: ${r.c}</small>
+                </div>
+                <button class="btn-del-single" onclick="borrarUno(${r.id})">✖</button>
+            </div>
+        `).join('');
+    }
+    document.getElementById('modalRegs').style.display = 'block';
+}
+
+function borrarUno(id) {
+    if(confirm("¿Borrar este registro?")) {
+        REGS = REGS.filter(r => r.id !== id);
+        localStorage.setItem('c_regs', JSON.stringify(REGS));
+        document.getElementById('count').innerText = REGS.length;
+        abrirRegistros(); // Refrescar lista
+    }
+}
+
+function limpiarTodo() {
+    if(confirm("⚠️ ¿ESTÁS SEGURO? Se borrarán todos los registros capturados hoy.")) {
+        REGS = [];
+        localStorage.setItem('c_regs', JSON.stringify(REGS));
+        document.getElementById('count').innerText = "0";
+        abrirRegistros();
+        document.getElementById('status').innerText = "REGISTROS LIMPIOS";
+        document.getElementById('status').style.background = "#eee";
+    }
+}
+
+// --- OTRAS FUNCIONES ---
 function filtrar() {
     const fC = document.getElementById('busC').value.toLowerCase();
     const fA = document.getElementById('busA').value.toLowerCase();
-    
-    const selC = document.getElementById('selC');
-    selC.innerHTML = CUADROS.filter(c => c.id.toLowerCase().includes(fC) || c.n.toLowerCase().includes(fC))
-        .map(c => `<option value="${c.id}" data-v="${c.v}">${c.n} (${c.id})</option>`).join('');
-        
-    const selA = document.getElementById('selA');
-    selA.innerHTML = ACTS.filter(a => a.id.toLowerCase().includes(fA) || a.n.toLowerCase().includes(fA))
-        .map(a => `<option value="${a.id}">${a.n} (${a.id})</option>`).join('');
+    document.getElementById('selC').innerHTML = CUADROS.filter(c => c.id.toLowerCase().includes(fC) || c.n.toLowerCase().includes(fC)).map(c => `<option value="${c.id}" data-v="${c.v}">${c.n} (${c.id})</option>`).join('');
+    document.getElementById('selA').innerHTML = ACTS.filter(a => a.id.toLowerCase().includes(fA) || a.n.toLowerCase().includes(fA)).map(a => `<option value="${a.id}">${a.n} (${a.id})</option>`).join('');
 }
 
 function abrirConfig() {
@@ -188,13 +200,10 @@ function abrirConfig() {
 function guardarMapeo() {
     const lines = document.getElementById('importPuestos').value.trim().split('\n');
     let nuevo = {};
-    lines.forEach(l => {
-        const p = l.split(',');
-        if(p.length === 2) { nuevo[p[1].trim()] = p[0].trim(); }
-    });
+    lines.forEach(l => { const p = l.split(','); if(p.length === 2) { nuevo[p[1].trim()] = p[0].trim(); } });
     MAPEO_PUESTOS = nuevo;
     localStorage.setItem('c_mapeo', JSON.stringify(MAPEO_PUESTOS));
-    alert("✅ Asignaciones guardadas");
+    alert("✅ Guardado");
 }
 
 function procesarCarga() {
@@ -207,7 +216,7 @@ function procesarCarga() {
     });
     if(nC.length) { CUADROS = nC; localStorage.setItem('c_cuadros', JSON.stringify(CUADROS)); }
     if(nA.length) { ACTS = nA; localStorage.setItem('c_acts', JSON.stringify(ACTS)); }
-    alert("✅ Catálogos actualizados");
+    alert("✅ Catálogos cargados");
     filtrar();
 }
 
@@ -218,32 +227,16 @@ function exportar() {
     const b = new Blob([csv], {type:'text/csv;charset=utf-8;'});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b);
-    a.download = `Reporte_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    a.download = `Reporte.csv`; a.click();
 }
 
-function abrirRegistros() {
-    const cont = document.getElementById('listaRegistros');
-    cont.innerHTML = REGS.length === 0 ? "Vacio" : REGS.slice().reverse().map(r => 
-        `<div style="padding:10px; border-bottom:1px solid #eee;"><b>${r.e}</b> - Act: ${r.a}</div>`
-    ).join('');
-    document.getElementById('modalRegs').style.display = 'block';
-}
-
-// --- INICIO ---
 window.onload = () => {
     document.getElementById('sup').value = localStorage.getItem('c_sup') || "";
     document.getElementById('count').innerText = REGS.length;
     filtrar();
-    
-    // Iniciar Cámara
     scannerInstance = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
-    scannerInstance.render((c) => {
-        procesarRegistro(c);
-    });
-    
-    document.getElementById('status').innerText = "LISTO";
+    scannerInstance.render((c) => { procesarRegistro(c); });
 };
 </script>
 </body>
 </html>
-

@@ -50,26 +50,25 @@
     <label>SUPERVISOR</label>
     <input type="text" id="sup" oninput="localStorage.setItem('c_sup', this.value)">
     
-    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-        <div>
-            <label>ACTIVIDAD (Default)</label>
-            <input type="text" id="busA" placeholder="Filtrar..." oninput="filtrar()">
-            <select id="selA"></select>
-        </div>
-        <div>
-            <label>JORNADA</label>
-            <select id="selJ">
-                <option value="1.0">1.0 (Completa)</option>
-                <option value="0.5">0.5 (Media)</option>
-                <option value="1.5">1.5</option>
-            </select>
-        </div>
-    </div>
+    <label>ACTIVIDAD (General)</label>
+    <input type="text" id="busA" placeholder="Buscar actividad..." oninput="filtrar()">
+    <select id="selA"></select>
+
+    <label>JORNADA / TURNO</label>
+    <select id="selJ">
+        <option value="9">MATUTINA (7:00-12:00)</option>
+        <option value="11">VESPERTINA (13:00-16:00)</option>
+        <option value="14">NOCTURNA</option>
+        <option value="15">MATUTINA-VESPERTINA</option>
+        <option value="16">1 TAREA</option>
+        <option value="17">1.5 TAREAS</option>
+        <option value="18">2 TAREAS</option>
+    </select>
 </div>
 
 <div class="card">
     <div id="reader" style="width: 100%; background: #000;"></div>
-    <div id="status">ESCANEANDO GENTE...</div>
+    <div id="status">ESCANEANDO CUADRILLA...</div>
     <div class="manual-container">
         <input type="text" id="manualCode" placeholder="Escribir ID...">
         <button class="btn-manual-add" onclick="registrarManual()">AÑADIR</button>
@@ -77,11 +76,11 @@
 </div>
 
 <div class="division-box" id="areaDivision" style="display:none;">
-    <h4 style="margin:0 0 10px 0; color:#e65100;">CUADROS A DIVIDIR</h4>
-    <p style="font-size:11px; margin-bottom:10px;">Escribe los cuadros separados por comas (ej: 101, 102, 105)</p>
-    <input type="text" id="cuadrosParaDividir" placeholder="Ej: 101, 202">
-    <button onclick="confirmarDivision()" style="width:100%; background:#ef6c00; color:white; padding:15px; border:none; border-radius:8px; margin-top:10px; font-weight:bold;">✅ ASIGNAR Y GUARDAR TODO</button>
-    <button onclick="cancelarCaptura()" style="width:100%; background:none; color:red; border:none; margin-top:10px;">Cancelar Captura</button>
+    <h4 style="margin:0 0 10px 0; color:#e65100;">DIVIDIR EN CUADROS</h4>
+    <p style="font-size:11px; margin-bottom:10px;">Escribe los cuadros (IDs) separados por comas:</p>
+    <input type="text" id="cuadrosParaDividir" placeholder="Ej: 101, 105, 110">
+    <button onclick="confirmarDivision()" style="width:100%; background:#ef6c00; color:white; padding:15px; border:none; border-radius:8px; margin-top:10px; font-weight:bold;">✅ FINALIZAR Y REPARTIR GENTE</button>
+    <button onclick="cancelarCaptura()" style="width:100%; background:none; color:red; border:none; margin-top:10px;">Borrar gente escaneada</button>
 </div>
 
 <button class="btn-export" onclick="exportar()">DESCARGAR REPORTE (CSV)</button>
@@ -112,7 +111,7 @@ let CUADROS = JSON.parse(localStorage.getItem('c_cuadros')) || [];
 let ACTS = JSON.parse(localStorage.getItem('c_acts')) || [];
 let MAPEO_COMPLETO = JSON.parse(localStorage.getItem('c_mapeo_v2')) || {}; 
 let REGS = JSON.parse(localStorage.getItem('c_regs')) || [];
-let COLA_ESPERA = []; // Gente escaneada que aún no tiene cuadro
+let COLA_ESPERA = [];
 
 function sonar(tipo) {
     try {
@@ -135,47 +134,34 @@ function sonar(tipo) {
 function procesarRegistro(codigo) {
     if(!codigo) return;
     const codLimpio = codigo.toString().trim();
-    const status = document.getElementById('status');
-    
-    // Evitar duplicados en el reporte total Y en la cola actual
     if(REGS.find(r => r.e === codLimpio) || COLA_ESPERA.find(c => c.e === codLimpio)) {
         sonar('error');
-        status.innerText = "❌ YA ESTÁ REGISTRADO: " + codLimpio;
+        document.getElementById('status').innerText = "❌ YA REGISTRADO: " + codLimpio;
         return;
     }
-
-    // Guardar temporalmente en la cola
-    COLA_ESPERA.push({ e: codLimpio, time: Date.now() });
-    
+    COLA_ESPERA.push({ e: codLimpio });
     sonar('exito');
     document.getElementById('countEspera').innerText = COLA_ESPERA.length;
     document.getElementById('areaDivision').style.display = 'block';
-    status.innerText = "👤 EN COLA: " + codLimpio;
+    document.getElementById('status').innerText = "👤 EN COLA: " + codLimpio;
 }
 
 function confirmarDivision() {
     const inputCuadros = document.getElementById('cuadrosParaDividir').value;
-    if(!inputCuadros) { alert("Escribe al menos un ID de cuadro"); return; }
+    if(!inputCuadros) { alert("Indica al menos un cuadro"); return; }
     
     const listaCuadros = inputCuadros.split(',').map(c => c.trim()).filter(c => c !== "");
-    if(COLA_ESPERA.length === 0) { alert("No hay gente para dividir"); return; }
-
     const numCuadros = listaCuadros.length;
-    const jornada = document.getElementById('selJ').value;
+    const jornadaValor = document.getElementById('selJ').value;
+    const jornadaTexto = document.getElementById('selJ').options[document.getElementById('selJ').selectedIndex].text;
     const supervisor = document.getElementById('sup').value;
     const actividadGral = document.getElementById('selA').value;
 
     COLA_ESPERA.forEach((persona, index) => {
-        // Lógica de repartición equitativa
         const cuadroAsignado = listaCuadros[index % numCuadros];
-        
-        // Buscar si tiene actividad automática
         let regla = MAPEO_COMPLETO[persona.e];
         let actFinal = (regla && regla.act) ? regla.act : actividadGral;
-        
-        // Buscar Variedad
         let cObj = CUADROS.find(c => c.id == cuadroAsignado);
-        let varFinal = cObj ? cObj.v : "";
 
         REGS.push({
             id: Date.now() + index,
@@ -183,9 +169,10 @@ function confirmarDivision() {
             c: cuadroAsignado,
             a: actFinal,
             e: persona.e,
-            j: jornada,
+            j: jornadaValor, // Guardamos el ID (9, 11, etc)
+            jt: jornadaTexto, // Guardamos el nombre para el reporte
             s: supervisor,
-            v: varFinal
+            v: cObj ? cObj.v : ""
         });
     });
 
@@ -196,23 +183,18 @@ function confirmarDivision() {
     document.getElementById('cuadrosParaDividir').value = "";
     document.getElementById('areaDivision').style.display = 'none';
     document.getElementById('status').innerText = "✅ CUADRILLA GUARDADA";
-    alert("Proceso completado. Se repartió la gente entre los cuadros indicados.");
-}
-
-function cancelarCaptura() {
-    if(confirm("¿Borrar la gente que acabas de escanear?")) {
-        COLA_ESPERA = [];
-        document.getElementById('countEspera').innerText = "0";
-        document.getElementById('areaDivision').style.display = 'none';
-    }
 }
 
 function registrarManual() {
     const input = document.getElementById('manualCode');
-    if(input.value.trim() !== "") {
-        procesarRegistro(input.value);
-        input.value = "";
-        input.focus();
+    if(input.value.trim() !== "") { procesarRegistro(input.value); input.value = ""; input.focus(); }
+}
+
+function cancelarCaptura() {
+    if(confirm("¿Borrar cola de espera?")) {
+        COLA_ESPERA = [];
+        document.getElementById('countEspera').innerText = "0";
+        document.getElementById('areaDivision').style.display = 'none';
     }
 }
 
@@ -234,7 +216,7 @@ function guardarMapeo() {
     lines.forEach(l => { const p = l.split(',').map(x => x.trim()); if(p.length >= 2) { nuevo[p[1]] = { act: p[0], cua: p[2] || "" }; } });
     MAPEO_COMPLETO = nuevo;
     localStorage.setItem('c_mapeo_v2', JSON.stringify(MAPEO_COMPLETO));
-    alert("OK");
+    alert("Mapeos guardados");
 }
 
 function procesarCarga() {
@@ -248,22 +230,18 @@ function procesarCarga() {
     CUADROS = nC; ACTS = nA;
     localStorage.setItem('c_cuadros', JSON.stringify(CUADROS));
     localStorage.setItem('c_acts', JSON.stringify(ACTS));
-    alert("Catálogos Cargados");
+    alert("Catálogos cargados");
     filtrar();
 }
 
 function abrirRegistros() {
     const cont = document.getElementById('listaRegistros');
-    cont.innerHTML = REGS.length === 0 ? "Vacio" : REGS.slice().reverse().map(r => `
-        <div style="border-bottom:1px solid #eee; padding:10px;">
-            <b>${r.e}</b> | C:${r.c} | J:${r.j} | A:${r.a}
-        </div>
-    `).join('');
+    cont.innerHTML = REGS.length === 0 ? "Vacio" : REGS.slice().reverse().map(r => `<div style="border-bottom:1px solid #eee; padding:10px;"><b>${r.e}</b> | C:${r.c} | J:${r.j} | A:${r.a}</div>`).join('');
     document.getElementById('modalRegs').style.display = 'block';
 }
 
 function limpiarTodo() {
-    if(confirm("Borrar todo el día?")) {
+    if(confirm("¿Borrar todo?")) {
         REGS = []; localStorage.setItem('c_regs', JSON.stringify(REGS));
         document.getElementById('countTotal').innerText = "0";
         abrirRegistros();
@@ -271,12 +249,11 @@ function limpiarTodo() {
 }
 
 function exportar() {
-    let csv = "\ufeffFecha,Cuadro,Actividad,Empleado,Jornada,Supervisor,Variedad\n";
-    REGS.forEach(r => { csv += `${r.f},${r.c},${r.a},"${r.e}",${r.j},"${r.s}","${r.v}"\n`; });
+    let csv = "\ufeffFecha,Cuadro,Actividad,Empleado,ID_Jornada,Nombre_Jornada,Supervisor,Variedad\n";
+    REGS.forEach(r => { csv += `${r.f},${r.c},${r.a},"${r.e}",${r.j},"${r.jt}","${r.s}","${r.v}"\n`; });
     const b = new Blob([csv], {type:'text/csv;charset=utf-8;'});
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(b);
-    a.download = `Reporte.csv`; a.click();
+    a.href = URL.createObjectURL(b); a.download = `Reporte.csv`; a.click();
 }
 
 window.onload = () => {

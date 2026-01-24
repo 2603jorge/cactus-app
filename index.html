@@ -15,12 +15,12 @@
         .btn-nav { padding: 12px; border: none; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; }
         .btn-config { background: #607d8b; }
         .btn-view { background: var(--info); }
-        #status { text-align: center; font-weight: bold; padding: 15px; border-radius: 8px; margin-top: 10px; border: 1px solid #ddd; min-height: 20px; }
+        #status { text-align: center; font-weight: bold; padding: 15px; border-radius: 8px; margin-top: 10px; border: 1px solid #ddd; min-height: 20px; background: #eee; }
         .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:2000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
         .btn-export { width: calc(100% - 20px); background: var(--p); color: white; padding: 20px; border: none; border-radius: 10px; font-weight: bold; position: fixed; bottom: 10px; left: 10px; z-index: 1000; }
-        textarea { width:100%; height:120px; border: 2px solid #ccc; border-radius: 8px; font-family: monospace; padding: 10px; box-sizing: border-box; margin-top: 5px; }
+        textarea { width:100%; height:120px; border: 2px solid #ccc; border-radius: 8px; padding: 10px; box-sizing: border-box; }
         .manual-container { display: flex; gap: 8px; margin-top: 15px; }
-        .btn-manual-add { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 20px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
+        .btn-manual-add { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 20px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -31,14 +31,14 @@
 </div>
 
 <div id="config" class="modal">
-    <h3 style="margin-top:0;">Editor de Mapeo</h3>
+    <h3 style="margin-top:0;">Editor de Mapeo (Automático)</h3>
     <label>ID_ACTIVIDAD, ID_EMPLEADO</label>
-    <textarea id="importPuestos" placeholder="Ejemplo: 1000, 13534"></textarea>
+    <textarea id="importPuestos" placeholder="1000, 13534"></textarea>
     <button onclick="guardarMapeo()" style="width:100%; padding:15px; background:var(--p); color:white; margin-top:10px; border:none; border-radius:8px; font-weight:bold;">💾 ACTUALIZAR ASIGNACIONES</button>
     
-    <hr style="margin:25px 0; border: 0; border-top: 1px solid #eee;">
+    <hr style="margin:25px 0;">
     
-    <h3>Catálogos</h3>
+    <h3>Catálogos (Cuadros/Actividades)</h3>
     <textarea id="importInput" placeholder="C1, Lote 1, Variedad"></textarea>
     <button onclick="procesarCarga()" style="width:100%; padding:15px; background:black; color:white; margin-top:10px; border:none; border-radius:8px; font-weight:bold;">📥 CARGAR CATÁLOGOS</button>
     
@@ -57,11 +57,11 @@
 </div>
 
 <div class="card">
-    <div id="reader" style="width: 100%;"></div>
-    <div id="status">SISTEMA LISTO</div>
+    <div id="reader" style="width: 100%; background: #000; min-height: 250px;"></div>
+    <div id="status">INICIANDO...</div>
     
     <div class="manual-container">
-        <input type="text" id="manualCode" placeholder="Escribir ID..." onkeypress="if(event.key==='Enter') registrarManual()">
+        <input type="text" id="manualCode" placeholder="Escribir código aquí...">
         <button class="btn-manual-add" onclick="registrarManual()">AÑADIR</button>
     </div>
 </div>
@@ -69,80 +69,113 @@
 <button class="btn-export" onclick="exportar()">DESCARGAR REPORTE (CSV)</button>
 
 <div id="modalRegs" class="modal">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h3>Registros</h3>
-        <button onclick="limpiarSoloRegistros()" style="color:red; border:none; background:none; font-weight:bold;">BORRAR TODO</button>
-    </div>
+    <h3>Registros de hoy</h3>
     <div id="listaRegistros"></div>
-    <button onclick="document.getElementById('modalRegs').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px; font-weight:bold;">❌ VOLVER</button>
+    <button onclick="document.getElementById('modalRegs').style.display='none'" style="width:100%; padding:15px; margin-top:20px; background:#ddd; border:none; border-radius:8px;">❌ VOLVER</button>
 </div>
 
 <script>
+// --- VARIABLES GLOBALES ---
 let CUADROS = JSON.parse(localStorage.getItem('c_cuadros')) || [];
 let ACTS = JSON.parse(localStorage.getItem('c_acts')) || [];
 let MAPEO_PUESTOS = JSON.parse(localStorage.getItem('c_mapeo')) || {}; 
 let REGS = JSON.parse(localStorage.getItem('c_regs')) || [];
-let isScanning = true;
+let scannerInstance = null;
 
+// --- SONIDOS ---
 function sonar(tipo) {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    if(tipo === 'exito') {
-        osc.frequency.value = 880; gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        osc.start(); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
-        osc.stop(ctx.currentTime + 0.2);
-    } else {
-        osc.frequency.value = 110; osc.type = 'square'; gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        osc.start(); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
-        osc.stop(ctx.currentTime + 0.5);
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        if(tipo === 'exito') {
+            osc.frequency.value = 880; gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            osc.start(); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+            osc.stop(ctx.currentTime + 0.2);
+        } else {
+            osc.frequency.value = 150; osc.type = 'square'; gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            osc.start(); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+            osc.stop(ctx.currentTime + 0.4);
+        }
+    } catch(e) { console.log("Sonido bloqueado"); }
+}
+
+// --- FUNCIÓN MAESTRA DE REGISTRO ---
+function procesarRegistro(codigo) {
+    if(!codigo) return;
+    const codLimpio = codigo.toString().trim();
+    const status = document.getElementById('status');
+    const cuadroId = document.getElementById('selC').value;
+
+    if(!cuadroId) {
+        alert("⚠️ Selecciona un CUADRO antes de escanear.");
+        return;
+    }
+
+    // Validar duplicado
+    if(REGS.find(r => r.e === codLimpio)) {
+        sonar('error');
+        status.innerText = "❌ YA REGISTRADO: " + codLimpio;
+        status.style.background = "#ffcdd2";
+        return;
+    }
+
+    // Validar largo
+    if(codLimpio.length > 8) { // Subí a 8 por si tus IDs son largos
+        sonar('error');
+        status.innerText = "❌ CÓDIGO MUY LARGO";
+        status.style.background = "#ffcdd2";
+        return;
+    }
+
+    // Lógica de Actividad Automática vs Manual
+    let actIdFinal = MAPEO_PUESTOS[codLimpio] || document.getElementById('selA').value;
+    let esAuto = !!MAPEO_PUESTOS[codLimpio];
+
+    // Guardar
+    const nuevoRegistro = {
+        id: Date.now(),
+        f: new Date().toLocaleDateString('en-GB'),
+        c: cuadroId,
+        a: actIdFinal,
+        e: codLimpio,
+        j: document.getElementById('selJ') ? document.getElementById('selJ').value : "9",
+        s: document.getElementById('sup').value,
+        v: document.getElementById('selC').selectedOptions[0]?.dataset.v || ""
+    };
+
+    REGS.push(nuevoRegistro);
+    localStorage.setItem('c_regs', JSON.stringify(REGS));
+    
+    // UI
+    document.getElementById('count').innerText = REGS.length;
+    status.innerText = esAuto ? `⭐ AUTO: ${codLimpio} (Act: ${actIdFinal})` : `✅ REGISTRO: ${codLimpio}`;
+    status.style.background = esAuto ? "#c8e6c9" : "#e3f2fd";
+    sonar('exito');
+}
+
+// --- FUNCIONES INTERFAZ ---
+function registrarManual() {
+    const input = document.getElementById('manualCode');
+    if(input.value.trim() !== "") {
+        procesarRegistro(input.value);
+        input.value = "";
+        input.focus();
     }
 }
 
 function filtrar() {
-    const fC = document.getElementById('busC').value;
+    const fC = document.getElementById('busC').value.toLowerCase();
     const fA = document.getElementById('busA').value.toLowerCase();
-    document.getElementById('selC').innerHTML = CUADROS.filter(c => c.id.includes(fC)).map(c => `<option value="${c.id}" data-v="${c.v}">${c.n}</option>`).join('');
-    document.getElementById('selA').innerHTML = ACTS.filter(a => a.n.toLowerCase().includes(fA) || a.id.includes(fA)).map(a => `<option value="${a.id}">${a.n}</option>`).join('');
-}
-
-function procesarRegistro(codigo) {
-    if(!codigo) return;
-    const cod = codigo.toString().trim();
-    const status = document.getElementById('status');
-    const cSel = document.getElementById('selC');
-
-    if(!cSel.value) { alert("⚠️ Elige Cuadro"); return; }
-    if(cod.length > 5) { sonar('error'); status.innerText = "❌ ERROR: +5 DÍGITOS"; status.style.background = "#ffcdd2"; return; }
-    if(REGS.find(r => r.e === cod)) { sonar('error'); status.innerText = "❌ YA REGISTRADO: " + cod; status.style.background = "#ffcdd2"; return; }
-
-    let actId = MAPEO_PUESTOS[cod] || document.getElementById('selA').value;
-    let esAuto = !!MAPEO_PUESTOS[cod];
-
-    sonar('exito');
-    REGS.push({
-        id: Date.now(), f: new Date().toLocaleDateString('en-GB'),
-        c: cSel.value, a: actId, e: cod,
-        j: document.getElementById('selJ').value,
-        s: document.getElementById('sup').value,
-        v: cSel.selectedOptions[0]?.dataset.v || ""
-    });
-    localStorage.setItem('c_regs', JSON.stringify(REGS));
-    document.getElementById('count').innerText = REGS.length;
-    status.innerText = esAuto ? `⭐ AUTO: ${cod} → Act ${actId}` : `✅ REGISTRO: ${cod}`;
-    status.style.background = esAuto ? "#c8e6c9" : "#e3f2fd";
-    status.style.color = esAuto ? "green" : "blue";
-}
-
-function registrarManual() {
-    const input = document.getElementById('manualCode');
-    const valor = input.value.trim();
-    if(valor !== "") {
-        procesarRegistro(valor);
-        input.value = "";
-        input.focus();
-    }
+    
+    const selC = document.getElementById('selC');
+    selC.innerHTML = CUADROS.filter(c => c.id.toLowerCase().includes(fC) || c.n.toLowerCase().includes(fC))
+        .map(c => `<option value="${c.id}" data-v="${c.v}">${c.n} (${c.id})</option>`).join('');
+        
+    const selA = document.getElementById('selA');
+    selA.innerHTML = ACTS.filter(a => a.id.toLowerCase().includes(fA) || a.n.toLowerCase().includes(fA))
+        .map(a => `<option value="${a.id}">${a.n} (${a.id})</option>`).join('');
 }
 
 function abrirConfig() {
@@ -161,7 +194,7 @@ function guardarMapeo() {
     });
     MAPEO_PUESTOS = nuevo;
     localStorage.setItem('c_mapeo', JSON.stringify(MAPEO_PUESTOS));
-    alert("✅ Mapeo actualizado");
+    alert("✅ Asignaciones guardadas");
 }
 
 function procesarCarga() {
@@ -174,54 +207,43 @@ function procesarCarga() {
     });
     if(nC.length) { CUADROS = nC; localStorage.setItem('c_cuadros', JSON.stringify(CUADROS)); }
     if(nA.length) { ACTS = nA; localStorage.setItem('c_acts', JSON.stringify(ACTS)); }
-    alert("✅ Catálogos cargados."); filtrar();
-}
-
-function onScanSuccess(c) { if(!isScanning) return; isScanning = false; procesarRegistro(c); setTimeout(()=>isScanning=true, 2000); }
-
-function abrirRegistros() {
-    const container = document.getElementById('listaRegistros');
-    container.innerHTML = REGS.length === 0 ? "Sin datos" : "";
-    REGS.slice().reverse().forEach(r => {
-        const d = document.createElement('div');
-        d.style.borderBottom = "1px solid #eee"; d.style.padding = "10px"; d.style.display="flex"; d.style.justifyContent="space-between";
-        d.innerHTML = `<span><b>${r.e}</b> - Act: ${r.a}</span><button onclick="borrarReg(${r.id})" style="color:red; border:none; background:none;">✖</button>`;
-        container.appendChild(d);
-    });
-    document.getElementById('modalRegs').style.display = 'block';
-}
-
-function borrarReg(id) {
-    REGS = REGS.filter(r => r.id !== id);
-    localStorage.setItem('c_regs', JSON.stringify(REGS));
-    document.getElementById('count').innerText = REGS.length;
-    abrirRegistros();
-}
-
-function limpiarSoloRegistros() {
-    if(confirm("¿Borrar todos los registros de hoy?")) {
-        REGS = []; localStorage.setItem('c_regs', JSON.stringify(REGS));
-        document.getElementById('count').innerText = "0";
-        abrirRegistros();
-    }
+    alert("✅ Catálogos actualizados");
+    filtrar();
 }
 
 function exportar() {
-    if(REGS.length === 0) return alert("No hay datos");
-    let csv = "\ufeffFecha,Cuadro,Actividad,Empleado,Jornada,Supervisor,Variedad\n";
-    REGS.forEach(r => { csv += `${r.f},${r.c},${r.a},"${r.e}",${r.j},"${r.s}","${r.v}"\n`; });
+    if(REGS.length === 0) return alert("Sin datos");
+    let csv = "\ufeffFecha,Cuadro,Actividad,Empleado,Supervisor,Variedad\n";
+    REGS.forEach(r => { csv += `${r.f},${r.c},${r.a},"${r.e}","${r.s}","${r.v}"\n`; });
     const b = new Blob([csv], {type:'text/csv;charset=utf-8;'});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b);
     a.download = `Reporte_${new Date().toISOString().slice(0,10)}.csv`; a.click();
 }
 
+function abrirRegistros() {
+    const cont = document.getElementById('listaRegistros');
+    cont.innerHTML = REGS.length === 0 ? "Vacio" : REGS.slice().reverse().map(r => 
+        `<div style="padding:10px; border-bottom:1px solid #eee;"><b>${r.e}</b> - Act: ${r.a}</div>`
+    ).join('');
+    document.getElementById('modalRegs').style.display = 'block';
+}
+
+// --- INICIO ---
 window.onload = () => {
     document.getElementById('sup').value = localStorage.getItem('c_sup') || "";
     document.getElementById('count').innerText = REGS.length;
     filtrar();
-    new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }).render(onScanSuccess);
+    
+    // Iniciar Cámara
+    scannerInstance = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+    scannerInstance.render((c) => {
+        procesarRegistro(c);
+    });
+    
+    document.getElementById('status').innerText = "LISTO";
 };
 </script>
 </body>
 </html>
+
